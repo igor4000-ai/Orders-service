@@ -1,0 +1,35 @@
+{% extends "admin/base_site.html" %}
+{% comment %}
+Страница запуска Celery-задачи do_import из админки (Этап 7).
+Показывает ссылку на прайс магазина и кнопку «Импортировать прайс»,
+которая отправляет POST на этот же URL.
+{% endcomment %}
+
+{% block content %}
+<h1>Импорт прайса: {{ shop.name }}</h1>
+
+<div>
+  <p><strong>Магазин:</strong> {{ shop.name }}</p>
+  <p><strong>Ссылка на прайс:</strong>
+    {% if shop.url %}
+      <a href="{{ shop.url }}" target="_blank">{{ shop.url }}</a>
+    {% else %}
+      — не задана (укажите поле «url» в карточке магазина) —
+    {% endif %}
+  </p>
+  <p><strong>Приём заказов:</strong> {% if shop.state %}включён{% else %}выключен{% endif %}</p>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <p>
+    При нажатии кнопки будет запущена Celery-задача <code>do_import</code>:
+    файл прайса скачается по указанной ссылке, и каталог магазина
+    полностью обновится (товары, категории, характеристики).
+  </p>
+  <input type="submit" value="Импортировать прайс" class="default"
+         {% if not shop.url %}disabled{% endif %}>
+</form>
+
+<p><a href="../">Вернуться к карточке магазина</a></p>
+{% endblock %}
