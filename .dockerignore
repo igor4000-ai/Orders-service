@@ -1,0 +1,17 @@
+# Файлы, не попадающие в docker-образ
+.git
+.gitignore
+.env
+.env.example
+docker-compose.yml
+db.sqlite3
+staticfiles/
+media/
+__pycache__/
+*.py[cod]
+env/
+venv/
+.venv/
+.idea/
+.vscode/
+*.log

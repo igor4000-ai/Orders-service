@@ -1,0 +1,102 @@
+# Docker Compose дипломного проекта «Сервис автоматизации закупок»
+#
+# Запуск:    docker compose up --build
+# Остановка: docker compose down (данные PostgreSQL останутся в volume,
+#            полное удаление: docker compose down -v)
+#
+# Поднимаемые сервисы:
+#   db      — PostgreSQL 16 (основная БД)
+#   redis   — брокер сообщений для Celery
+#   web     — Django-приложение (миграции + демо-данные + сервер)
+#   celery  — воркер Celery: задачи send_email и do_import
+#   mailhog — SMTP-ретранслятор с веб-интерфейсом: все письма сервиса
+#             видны на http://localhost:8025
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-orders}
+      POSTGRES_USER: ${POSTGRES_USER:-orders}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orders}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    # При старте: применяем миграции, загружаем демо-прайс и пользователей,
+    # затем запускаем сервер
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py load_yaml data/shop1.yaml &&
+             python manage.py create_demo_data &&
+             python manage.py runserver 0.0.0.0:8000"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-docker-dev-key}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: "*"
+      POSTGRES_DB: ${POSTGRES_DB:-orders}
+      POSTGRES_USER: ${POSTGRES_USER:-orders}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orders}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      # Celery включён: письма и импорт уходят в воркер через Redis
+      USE_CELERY: "True"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      # Письма уходит в MailHog — веб-интерфейс http://localhost:8025
+      EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+      EMAIL_HOST: mailhog
+      EMAIL_PORT: "1025"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery:
+    build: .
+    # Воркер выполняет задачи send_email и do_import
+    command: celery -A orders worker --loglevel=info
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-docker-dev-key}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      POSTGRES_DB: ${POSTGRES_DB:-orders}
+      POSTGRES_USER: ${POSTGRES_USER:-orders}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orders}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      USE_CELERY: "True"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+      EMAIL_HOST: mailhog
+      EMAIL_PORT: "1025"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025"
+
+volumes:
+  pgdata:
